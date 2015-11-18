@@ -65,6 +65,16 @@ class MarkupBuilderCodeTransformer extends ClassCodeExpressionTransformer {
         return unit;
     }
 
+    '''
+    总的transform入口
+    1. 动态变量 的处理逻辑放在了这个函数中
+        model -> this.getModel()
+        unescaped -> this.getModel()
+        变量名，无需转义    -> this.getModel().get("变量名")
+        变量名，有转义     ->  this.tryEscapse(this.getModel().get("变量名"))
+    2. 函数
+    3. closure
+    '''
     @Override
     public Expression transform(final Expression exp) {
         if (exp instanceof MethodCallExpression) {
@@ -82,12 +92,25 @@ class MarkupBuilderCodeTransformer extends ClassCodeExpressionTransformer {
                         "getModel",
                         ArgumentListExpression.EMPTY_ARGUMENTS
                 );
+                '''
+                这里设置了VariableExpression("this")作为object expression，为什么还要setImplicitThis(true)？
+                意思可能是说，生成代码的时候，就不要产生"this."字符串了
+                '''
                 callGetModel.setImplicitThis(true);
                 callGetModel.setSourcePosition(exp);
                 String varName = var.getName();
                 if ("model".equals(varName) || "unescaped".equals(varName)) {
+                    '''
+                    model
+                    unescaped
+                    以上两种变量，全都默认是model本身的binding
+                    '''
                     return callGetModel;
                 }
+
+                '''
+                有具体变量名称时，用this.getModel().get("变量名")
+                '''
                 MethodCallExpression mce = new MethodCallExpression(
                         callGetModel,
                         "get",
@@ -95,6 +118,10 @@ class MarkupBuilderCodeTransformer extends ClassCodeExpressionTransformer {
                 );
                 mce.setSourcePosition(exp);
                 mce.setImplicitThis(false);
+
+                '''
+                根据配置，决定是否进行自动转义：this.tryEscapse(this.getModel().get("变量名"))
+                '''
                 MethodCallExpression yield = new MethodCallExpression(
                         new VariableExpression("this"),
                         "tryEscape",
@@ -108,23 +135,38 @@ class MarkupBuilderCodeTransformer extends ClassCodeExpressionTransformer {
         return super.transform(exp);
     }
 
+    '''
+    1. 处理include
+    2. 动态函数调用 -> methodMissing()
+    '''
     private Expression transformMethodCall(final MethodCallExpression exp) {
         String name = exp.getMethodAsString();
         if (exp.isImplicitThis() && "include".equals(name)) {
             return tryTransformInclude(exp);
         } else if (exp.isImplicitThis() && name.startsWith(":")) {
+            '''
+            变换为函数动态调用
+            '''
             List<Expression> args;
             if (exp.getArguments() instanceof ArgumentListExpression) {
                 args = ((ArgumentListExpression) exp.getArguments()).getExpressions();
             } else {
                 args = Collections.singletonList(exp.getArguments());
             }
+            '''
+            new ArgumentListExpression(new ConstantExpression(name.substring(1)), new ArrayExpression(ClassHelper.OBJECT_TYPE, args))
+            因为是methodMissing调用，所以new ConstantExpression(name.substring(1))作为第一个参数（动态调用的函数名）
+            '''
             Expression newArguments = transform(new ArgumentListExpression(new ConstantExpression(name.substring(1)), new ArrayExpression(ClassHelper.OBJECT_TYPE, args)));
             MethodCallExpression call = new MethodCallExpression(
                     new VariableExpression("this"),
                     "methodMissing",
                     newArguments
             );
+            '''
+            isSafe()
+            is this a safe method call, i.e. if true then if the source object is null then this method call will return null rather than throwing a null pointer exception
+            '''
             call.setImplicitThis(true);
             call.setSafe(exp.isSafe());
             call.setSpreadSafe(exp.isSpreadSafe());
@@ -134,6 +176,16 @@ class MarkupBuilderCodeTransformer extends ClassCodeExpressionTransformer {
         return super.transform(exp);
     }
 
+    '''
+    include示例：
+        html {
+            include template: 'includes/header.tpl'
+            include template: 'includes/body.tpl'
+        }
+    ->
+        includeGroovy('includes/header.tpl')
+        includeGroovy('includes/body.tpl')
+    '''
     private Expression tryTransformInclude(final MethodCallExpression exp) {
         Expression arguments = exp.getArguments();
         if (arguments instanceof TupleExpression) {
