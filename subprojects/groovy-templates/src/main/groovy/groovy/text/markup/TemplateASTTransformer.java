@@ -68,12 +68,19 @@ class TemplateASTTransformer extends CompilationCustomizer {
     @Override
     public void call(final SourceUnit source, final GeneratorContext context, final ClassNode classNode) throws CompilationFailedException {
         if (classNode.isScriptBody()) {
+            //设置super class为BaseTemplate
             classNode.setSuperClass(ClassHelper.make(config.getBaseTemplateClass()));
+            //创建constructor函数
             createConstructor(classNode);
+
             transformRunMethod(classNode, source);
         }
     }
 
+    '''
+    对run()方法进行transform,为什么？
+    dsl中所有代码，都在run()方法body中，需要做transform
+    '''
     private void transformRunMethod(final ClassNode classNode, final SourceUnit source) {
         MethodNode runMethod = classNode.getDeclaredMethod("run", Parameter.EMPTY_ARRAY);
         Statement code = runMethod.getCode();

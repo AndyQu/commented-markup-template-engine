@@ -206,13 +206,19 @@ public abstract class BaseTemplate implements Writable {
      */
     public Object methodMissing(String tagName, Object args) throws IOException {
         Object o = model.get(tagName);
+        '''
+        tagName有可能不是标签，而是model中定义的函数。因此，首先从model里面取tagName对应的Object，看其是否为函数。
+        如果是，则调用函数产生内容。
+        如果不是，则认为tagName就是标签
+        '''
         if (o instanceof Closure) {
             if (args instanceof Object[]) {
                 yieldUnescaped(((Closure) o).call((Object[])args));
                 return this;
+            } else {
+                yieldUnescaped(((Closure) o).call(args));
+                return this;
             }
-            yieldUnescaped(((Closure) o).call(args));
-            return this;
         } else if (args instanceof Object[]) {
             final Writer wrt = out;
             TagData tagData = new TagData(args).invoke();
@@ -360,6 +366,9 @@ public abstract class BaseTemplate implements Writable {
         return configuration.isAutoIndent() && !(out instanceof DelegatingIndentWriter)?new DelegatingIndentWriter(out, configuration.getAutoIndentString()):out;
     }
 
+    '''
+    封装了标签的数据。包括标签的属性，标签内部的数据
+    '''
     private class TagData {
         private final Object[] array;
         private Map attributes;
@@ -377,6 +386,12 @@ public abstract class BaseTemplate implements Writable {
             return body;
         }
 
+        '''
+        这个方法初始化
+            attributes
+            body
+        方法名称"invoke"不合适，可以取名为"init"等，表达出初始化标签数据的内涵
+        '''
         public TagData invoke() {
             attributes = null;
             body = null;
